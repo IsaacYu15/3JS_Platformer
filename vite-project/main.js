@@ -7,29 +7,10 @@ import CannonDebugger from "cannon-es-debugger";
 const pointsUI = document.querySelector("#points");
 let points = 0;
 
-const randomRangeNum = (max, min) => {
-  return Math.floor(Math.random() * (max - min + 1) + min);
-};
-
-const moveObstacles = (arr, speed, maxX, minX, maxZ, minZ) => {
-  //look into forEach
-  /*
-  arr.forEach((el) => {
-    el.body.position.z += speed;
-    if (el.body.position.z > camera.position.z) {
-      el.body.position.x = randomRangeNum(maxX, minX);
-      el.body.position.z = randomRangeNum(maxZ, minZ);
-    }
-    el.mesh.position.copy(el.body.position);
-    el.mesh.quaternion.copy(el.body.quaternion);
-  });
-  */
-};
-
 //SCENE SET UP
 const scene = new THREE.Scene();
 const world = new CANNON.World({
-  gravity: new CANNON.Vec3(0, -9.82, 0),
+  gravity: new CANNON.Vec3(0, -30, 0),
 });
 const cannonDebugger = new CannonDebugger(scene, world, {
   color: "#AEE2FF",
@@ -43,7 +24,7 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
-camera.position.z = 4.5;
+camera.position.z = 7;
 camera.position.y = 1.5;
 
 //RENDERER
@@ -51,21 +32,102 @@ const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
+//LIGHT
+const directionalLight = new THREE.DirectionalLight(0xffffff, 3); // soft white light
+directionalLight.position.z = 5;
+directionalLight.position.y = 10;
+scene.add(directionalLight);
+
+const light = new THREE.AmbientLight(0x404040, 1); // soft white light
+scene.add(light);
+
 //GROUND
+const platformLength = 10;
+const platformWidth = 2;
+const platformHeight = 0.5;
 
-//dimensions in cannon is half the size of the 3js dimensions
-const groundBody = new CANNON.Body({
-  shape: new CANNON.Box(new CANNON.Vec3(15, 0.5, 15)),
-});
-groundBody.position.y = -1;
-world.addBody(groundBody); //physics body vs visual?
+const platformTransforms = [
+  {
+    scale: platformLength / 4,
+    position: new THREE.Vector3(5, 0.75, 0),
+  },
 
-const ground = new THREE.Mesh(
-  new THREE.BoxGeometry(30, 1, 30), //dims (width, height depth)
-  new THREE.MeshBasicMaterial({ color: 0x00ff00 }) //mats
-);
-ground.position.y = -1;
-scene.add(ground);
+  {
+    scale: platformLength / 4,
+    position: new THREE.Vector3(-5, 0.75, 0),
+  },
+
+  {
+    scale: platformLength,
+    position: new THREE.Vector3(0, -1, 0),
+  },
+];
+
+const platforms = [];
+
+for (let i = 0; i < platformTransforms.length; i++) {
+  const groundBody = new CANNON.Body({
+    shape: new CANNON.Box(
+      new CANNON.Vec3(
+        platformTransforms[i].scale / 2,
+        platformHeight / 2,
+        platformWidth / 2
+      )
+    ),
+  });
+  groundBody.position.y = platformTransforms[i].position.y;
+  groundBody.position.x = platformTransforms[i].position.x;
+
+  console.log(platformTransforms[i].position.y);
+  world.addBody(groundBody); //physics body vs visual?
+
+  const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      platformTransforms[i].scale,
+      platformHeight,
+      platformWidth
+    ), //dims (width, height depth)
+    new THREE.MeshStandardMaterial({ color: 0x00ff00 }) //mats
+  );
+
+  ground.position.copy(groundBody.position);
+  scene.add(ground);
+  /*
+  const body = new CANNON.Body({
+    shape: new CANNON.Box(
+      new CANNON.Vec3(
+        platformTransforms[i].scale / 2,
+        platformHeight / 2,
+        platformWidth / 2
+      )
+    ),
+  });
+
+  const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      platformTransforms[i].scale,
+      platformHeight,
+      platformWidth
+    ), //dims (width, height depth)
+    new THREE.MeshStandardMaterial({ color: 0x00ff00 }) //mats
+  );
+
+  ground.position.x = platformTransforms[i].position.x;
+  ground.position.y = platformTransforms[i].position.y;
+  body.position.copy(ground);
+
+  world.addBody(body); //physics body vs visual?
+  scene.add(ground);
+*/
+  const groundObject = {
+    mesh: ground,
+    body: groundBody,
+  };
+
+  platforms.push(groundObject);
+}
+
+console.log(platforms);
 
 //PLAYER
 const playerBody = new CANNON.Body({
@@ -77,14 +139,12 @@ world.addBody(playerBody);
 
 const player = new THREE.Mesh(
   new THREE.BoxGeometry(0.5, 0.5, 0.5), //dims (width, height depth)
-  new THREE.MeshBasicMaterial({ color: 0xff0000 }) //mats
+  new THREE.MeshStandardMaterial({ color: 0xff0000 }) //mats
 );
-ground.position.y = -1;
 scene.add(player);
 
-let canJump = false;
-
 playerBody.addEventListener("collide", (e) => {
+  /*
   powerups.forEach((el) => {
     if (e.body === el.body) {
       el.body.position.x = randomRangeNum(8, -8);
@@ -95,47 +155,42 @@ playerBody.addEventListener("collide", (e) => {
       pointsUI.textContent = points.toString();
       console.log("yes");
     }
+  });*/
+
+  platforms.forEach((el) => {
+    if (e.body === el.body) {
+      canJump = true;
+    }
   });
-  if (e.body === groundBody) {
-    canJump = true;
-  }
 });
 
-//POWER UP
-const powerups = [];
+//controller
+const controls = {
+  d: { pressed: false },
+  a: { pressed: false },
+  " ": { pressed: false },
+};
 
-for (let i = 0; i < 10; i++) {
-  const posX = randomRangeNum(8, -8);
-  const posZ = randomRangeNum(-5, -10);
+let canJump = false;
+const playerMovement = () => {
+  if (controls[" "].pressed && canJump) {
+    playerBody.velocity.y = 12;
+    canJump = false;
+  }
 
-  const powerup = new THREE.Mesh(
-    new THREE.TorusGeometry(1, 0.4, 15, 50),
-    new THREE.MeshBasicMaterial({ color: 0xffff00 })
-  );
-  powerup.scale.set(0.1, 0.1, 0.1);
-  powerup.position.x = posX;
-  powerup.position.z = posZ;
-  powerup.name = "powerup" + [i + 1]; //look into this
-  scene.add(powerup);
+  if (controls["a"].pressed) {
+    playerBody.position.x -= 0.07;
+  }
 
-  const powerupBody = new CANNON.Body({
-    shape: new CANNON.Sphere(0.2),
-  });
-  powerupBody.position.set(posX, 0, posZ);
-  world.addBody(powerupBody);
-
-  const powerUpObject = {
-    mesh: powerup,
-    body: powerupBody,
-  };
-
-  powerups.push(powerUpObject);
-}
+  if (controls["d"].pressed) {
+    playerBody.position.x += 0.07;
+  }
+};
 
 function animate() {
   requestAnimationFrame(animate);
 
-  moveObstacles(powerups, 0.1, 8, -8, -5, -10);
+  playerMovement();
 
   world.fixedStep();
 
@@ -157,27 +212,18 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const userInput = new THREE.Vector3();
-
 window.addEventListener("keydown", (e) => {
-  if (e.key === "d" || e.key === "ArrowRight") {
-    playerBody.velocity.set(20, 0, 0);
+  try {
+    controls[e.key].pressed = true;
+  } catch (err) {
+    console.log("invalid key pressed");
   }
+});
 
-  if (e.key === "a" || e.key === "ArrowLeft") {
-    playerBody.velocity.set(-20, 0, 0);
+window.addEventListener("keyup", (e) => {
+  try {
+    controls[e.key].pressed = false;
+  } catch (err) {
+    console.log("invalid key pressed");
   }
-
-  if (e.key === "r") {
-    playerBody.position.x = 0;
-    playerBody.position.y = 0;
-    playerBody.position.z = 0;
-  }
-
-  if (e.key === " " && canJump) {
-    playerBody.velocity.set(playerBody.velocity.x, 10, 0);
-    canJump = false;
-  }
-
-  console.log(userInput);
 });
